@@ -49,6 +49,8 @@ button,select,input{font:inherit;color:inherit}
 .btn.sm{padding:5px 10px;font-size:12.5px;border-radius:8px}
 select,input[type=date],input[type=text],input[type=search],input[type=number]{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;outline:none;min-width:0}
 select:focus,input:focus{border-color:var(--accent)}
+input.dt{width:118px;text-align:center;font-variant-numeric:tabular-nums}
+input.bad{border-color:var(--danger)!important}
 .card{position:relative;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,0) 45%),var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
 .card:hover{border-color:rgba(255,255,255,.18)}
 .card h3{margin:0;font-size:15px;font-weight:700}
@@ -163,7 +165,8 @@ td{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drop{position:fixed;inset:0;background:rgba(91,140,255,.18);border:3px dashed var(--accent);z-index:80;display:none;place-items:center;font-size:22px;font-weight:700;color:var(--accent)}
 .drop.show{display:grid}
 .empty{color:var(--muted);text-align:center;padding:40px 10px}
-footer{margin-top:24px;color:var(--muted);font-size:12.5px;text-align:center}
+footer{margin-top:28px;color:var(--muted);font-size:12.5px;text-align:center;display:grid;gap:6px}
+footer .dev{font-size:14px;font-weight:700;color:var(--text);letter-spacing:.01em}
 .hidden{display:none!important}
 @media(max-width:640px){.chart-box{height:260px}.chart-box.tall{height:340px}.actions{width:100%}.fgroup select{max-width:100%}}
 </style>
@@ -180,13 +183,6 @@ footer{margin-top:24px;color:var(--muted);font-size:12.5px;text-align:center}
   </div>
   <div class="actions">
     <span class="status" id="status"><i></i><span>Завантаження…</span></span>
-    <select id="autoRefresh" title="Автооновлення даних">
-      <option value="0">Автооновлення: вимк.</option>
-      <option value="5">кожні 5 хв</option>
-      <option value="15">кожні 15 хв</option>
-      <option value="30">кожні 30 хв</option>
-      <option value="60">щогодини</option>
-    </select>
     <button class="btn primary" id="btnRefresh" title="Оновити дані з порталу">⟳ Оновити</button>
     <button class="btn icon" id="btnUpload" title="Завантажити файл вручну (CSV / XLSX / JSON)">⤒</button>
     <button class="btn icon" id="btnSettings" title="Налаштування колонок і джерела">⚙</button>
@@ -213,7 +209,7 @@ footer{margin-top:24px;color:var(--muted);font-size:12.5px;text-align:center}
   <div class="fgroup">
     <label>Період</label>
     <div style="display:flex;gap:6px;align-items:center">
-      <input type="date" id="fFrom"><span style="color:var(--muted)">—</span><input type="date" id="fTo">
+      <input type="text" id="fFrom" class="dt" placeholder="дд.мм.рррр" inputmode="numeric" maxlength="10" autocomplete="off"><span style="color:var(--muted)">—</span><input type="text" id="fTo" class="dt" placeholder="дд.мм.рррр" inputmode="numeric" maxlength="10" autocomplete="off">
     </div>
   </div>
   <div class="fgroup">
@@ -315,8 +311,9 @@ footer{margin-top:24px;color:var(--muted);font-size:12.5px;text-align:center}
 </main>
 
 <footer>
-  Джерело: <a id="srcLink" target="_blank" rel="noopener">Портал відкритих даних Дніпра — «Дані про надходження звернень на телефонні "гарячі лінії"…»</a>.
-  Дані оприлюднені відповідно до Закону України «Про доступ до публічної інформації».
+  <div class="dev">Розроблено КП «ІНФО-РАДА-ДНІПРО»</div>
+  <div>Джерело даних: <a id="srcLink" target="_blank" rel="noopener">Портал відкритих даних Дніпра — «Дані про надходження звернень на телефонні "гарячі лінії"…»</a>.
+  Дані оприлюднені відповідно до Закону України «Про доступ до публічної інформації».</div>
 </footer>
 
 <div class="loader" id="loader"><div class="box"><div class="spinner"></div><b id="loaderTitle">Завантаження даних</b><div class="sub" id="loaderText" style="margin-top:6px">Підключаюсь до порталу…</div><div class="progress"><div id="loaderBar"></div></div></div></div>
@@ -355,6 +352,7 @@ const fmtD = d => d ? pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear
 const fmtDT = d => d ? fmtD(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()) : '—';
 const NF = new Intl.NumberFormat('uk-UA',{maximumFractionDigits:1});
 const fmtN = n => NF.format(n);
+const zv = n => { n = Math.abs(Math.round(n)); const a = n % 100, b = n % 10; return (a >= 11 && a <= 14) || b === 0 || b >= 5 ? 'звернень' : 'звернення'; };
 const pct = (a,b) => b ? Math.round(a/b*1000)/10 : 0;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const trunc = (s,n) => { s = String(s ?? ''); return s.length > n ? s.slice(0,n-1)+'…' : s; };
@@ -362,6 +360,42 @@ const COLL = new Intl.Collator('uk',{numeric:true,sensitivity:'base'});
 const EMPTY = '(не вказано)';
 function hexA(hex,a){ const h = hex.replace('#',''); const n = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h,16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; }
 function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+/* ---------- Українські назви полів (стандарт набору даних «appeals») ---------- */
+const FIELD_UK = {
+  uid:'Ідентифікатор', id:'Ідентифікатор', receivedDateTime:'Дата та час реєстрації', receivedDate:'Дата реєстрації',
+  registrationDate:'Дата реєстрації', type:'Тип звернення', kind:'Тематична категорія', category:'Категорія',
+  subject:'Тема', content:'Зміст', description:'Опис', accrualMethod:'Спосіб надходження', source:'Джерело',
+  CATUTTC:'Код КАТОТГ', catuttc:'Код КАТОТГ', addressPostCode:'Поштовий індекс', addressAdminUnitL1:'Країна',
+  addressAdminUnitL2:'Регіон', addressAdminUnitL3:'Район', addressAdminUnitL4:'Територіальна громада',
+  addressPostName:'Населений пункт', addressThoroughfare:'Вулиця', addressLocatorDesignator:'Номер будинку',
+  addressLocatorBuilding:'Номер корпусу', address:'Адреса', status:'Статус', organizationName:'Виконавець',
+  organizationId:'Код ЄДРПОУ виконавця', result:'Результат розгляду', resultDate:'Дата розгляду',
+  closedDateTime:'Дата та час закриття', deadline:'Термін виконання', district:'Район', phone:'Телефон'
+};
+// значення, які мають бути українською, навіть якщо в таблиці записані англійською
+const VALUE_UK = {
+  'null':'', 'none':'', 'undefined':'', 'n/a':'', '-':'',
+  'true':'Так', 'false':'Ні', 'yes':'Так', 'no':'Ні',
+  'new':'Нова', 'open':'Відкрита', 'opened':'Відкрита', 'accepted':'Прийнята', 'registered':'Зареєстрована',
+  'in progress':'В роботі', 'in_progress':'В роботі', 'inprogress':'В роботі', 'processing':'В роботі', 'pending':'Очікує',
+  'assigned':'Передано виконавцю', 'done':'Виконано', 'completed':'Виконано', 'executed':'Виконано', 'resolved':'Вирішено',
+  'closed':'Закрита', 'rejected':'Відхилено', 'declined':'Відхилено', 'cancelled':'Скасовано', 'canceled':'Скасовано',
+  'overdue':'Прострочено', 'duplicate':'Дублікат', 'hotline':'Гаряча лінія', 'phone':'Телефон', 'call':'Дзвінок',
+  'email':'Електронна пошта', 'e-mail':'Електронна пошта', 'website':'Вебсайт', 'web':'Вебсайт', 'chatbot':'Чат-бот',
+  'telegram':'Telegram', 'viber':'Viber', 'mobile app':'Мобільний застосунок', 'app':'Мобільний застосунок',
+  'complaint':'Скарга', 'request':'Заява', 'proposal':'Пропозиція', 'suggestion':'Пропозиція', 'information':'Запит на інформацію',
+  'emergency':'Аварійна ситуація', 'accident':'Аварійна ситуація', 'consultation':'Консультація', 'gratitude':'Подяка'
+};
+const fl = f => FIELD_UK[f] || FIELD_UK[String(f).replace(/^_+/,'')] || String(f)
+  .replace(/([a-zа-яії])([A-ZА-ЯІЇ])/g,'$1 $2').replace(/[_]+/g,' ').replace(/^./, c => c.toUpperCase());
+function ukValue(v){
+  const k = v.toLowerCase();
+  return Object.prototype.hasOwnProperty.call(VALUE_UK, k) ? VALUE_UK[k] : v;
+}
+// поля, які не мають сенсу як категорії для графіків
+const DIM_SKIP = /^(uid|id|content|description|CATUTTC|catuttc|addressPostCode|addressLocatorDesignator|addressLocatorBuilding|addressAdminUnitL1|addressAdminUnitL2|organizationId|phone)$/;
+const DIM_PREFER = ['kind','type','organizationName','status','result','accrualMethod','addressThoroughfare','addressAdminUnitL3','addressPostName','category','subject'];
 
 /* ---------- Розбір дат ---------- */
 const UK_MON_RX = /(січ|лют|бер|кві|тра|чер|лип|сер|вер|жов|лис|гру)[а-яіїєґʼ']*\s+(\d{4})/i;
@@ -477,7 +511,7 @@ async function loadViaProxies(){
 async function loadFromSite(){
   try{
     const r = await loadViaJsonp();
-    state.via = 'напряму з порталу';
+    state.via = '';
     return r;
   }catch(e){ errLog.push('[портал] ' + e.message); }
   try{ return await loadViaProxies(); }
@@ -527,7 +561,7 @@ function normalize(rows, fields){
       if(v == null) v = '';
       else if(v instanceof Date) v = isNaN(v) ? '' : fmtLocal(v);
       else if(typeof v === 'object') v = JSON.stringify(v);
-      v = String(v).trim(); o[n] = v; if(v !== '') any = true;
+      v = ukValue(String(v).trim()); o[n] = v; if(v !== '') any = true;
     }
     if(any) out.push(o);
   }
@@ -543,14 +577,14 @@ async function load(silent){
   try{
     const r = await loadFromSite();
     data = r.data; meta = r.meta;
-    source = 'таблиця «appeals» з порталу';
+    source = 'портал відкритих даних Дніпра';
     if(!data || !data.rows.length) throw new Error('Таблиця порожня або не розпізнана');
     const n = normalize(data.rows, data.fields);
     state.meta = meta; state.source = source; state.fromCache = false; state.loadedAt = new Date();
     setData(n.rows, n.fields);
     hideError();
     const json = JSON.stringify({ rows: n.rows, fields: n.fields, meta, source, at: state.loadedAt.toISOString() });
-    if(json.length < 4.5e6) LS.set('cache', JSON.parse(json)); else LS.set('cache', null);
+    if(json.length < 4.5e6) LS.set('cache2', JSON.parse(json)); else LS.set('cache2', null);
     setStatus('ok', `Актуально · ${pad(state.loadedAt.getHours())}:${pad(state.loadedAt.getMinutes())}`);
     if(silent && prevCount){
       const diff = state.raw.length - prevCount;
@@ -558,7 +592,7 @@ async function load(silent){
     }
   }catch(e){
     errLog.push('Підсумок: ' + e.message);
-    const cache = LS.get('cache', null);
+    const cache = LS.get('cache2', null);
     if(!state.raw.length && cache && cache.rows && cache.rows.length){
       state.meta = cache.meta; state.source = cache.source; state.loadedAt = new Date(cache.at); state.fromCache = true;
       setData(cache.rows, cache.fields);
@@ -635,7 +669,12 @@ function schemaFor(fields){
     if(ok(saved.dateCol) && ok(saved.weightCol) && saved.dims.every(d=>fields.includes(d))) return { ...saved, auto:false };
   }
   const a = analyze(state.raw, fields);
-  return { key, dateCol: a.dateCol, weightCol: a.weightCol, dims: a.dims, auto:true };
+  const ok = f => fields.includes(f) && new Set(state.raw.slice(0,3000).map(r=>r[f])).size >= 2;
+  let dims = DIM_PREFER.filter(ok);
+  for(const d of a.dims) if(!dims.includes(d) && !DIM_SKIP.test(d)) dims.push(d);
+  dims = dims.slice(0,7);
+  const dateCol = ['receivedDateTime','registrationDate','receivedDate'].find(f => fields.includes(f)) || a.dateCol;
+  return { key, dateCol, weightCol: a.weightCol, dims, auto:true };
 }
 
 function setData(rows, fields){
@@ -750,15 +789,15 @@ function setRange(days){
 }
 function syncFilterInputs(){
   const f = state.filters;
-  $('#fFrom').value = f.from ? ymd(f.from) : '';
-  $('#fTo').value = f.to ? ymd(f.to) : '';
+  $('#fFrom').value = f.from ? fmtD(f.from) : '';
+  $('#fTo').value = f.to ? fmtD(f.to) : '';
   $$('#dimFilters select').forEach(sel => { const s = f.dims[sel.dataset.dim]; sel.value = s && s.size === 1 ? [...s][0] : ''; if(s && s.size > 1) sel.value = '__multi'; });
   renderChips();
 }
 function renderChips(){
   const f = state.filters, out = [];
   if(f.from || f.to) out.push(`<span class="chip"><span>📅 ${f.from?fmtD(f.from):'…'} — ${f.to?fmtD(f.to):'…'}</span><button data-x="date">×</button></span>`);
-  for(const [k,s] of Object.entries(f.dims)) for(const v of (s||[])) out.push(`<span class="chip" title="${esc(k)}"><span>${esc(trunc(k,18))}: <b>${esc(trunc(v,40))}</b></span><button data-x="dim" data-k="${esc(k)}" data-v="${esc(v)}">×</button></span>`);
+  for(const [k,s] of Object.entries(f.dims)) for(const v of (s||[])) out.push(`<span class="chip" title="${esc(fl(k))}"><span>${esc(trunc(fl(k),22))}: <b>${esc(trunc(v,40))}</b></span><button data-x="dim" data-k="${esc(k)}" data-v="${esc(v)}">×</button></span>`);
   if(f.q) out.push(`<span class="chip"><span>🔎 «${esc(f.q)}»</span><button data-x="q">×</button></span>`);
   $('#chips').innerHTML = out.join('');
 }
@@ -769,14 +808,14 @@ function buildControls(){
   // фільтри за категоріями
   $('#dimFilters').innerHTML = dims.slice(0,3).map(d => {
     const opts = sortDesc(groupSum(state.raw, r => dimVal(r,d))).slice(0,400);
-    return `<div class="fgroup"><label title="${esc(d)}">${esc(trunc(d,26))}</label><select data-dim="${esc(d)}"><option value="">Усі (${opts.length})</option><option value="__multi" hidden>Кілька значень</option>${opts.map(([v,c])=>`<option value="${esc(v)}">${esc(trunc(v,60))} · ${fmtN(c)}</option>`).join('')}</select></div>`;
+    return `<div class="fgroup"><label title="${esc(fl(d))}">${esc(trunc(fl(d),26))}</label><select data-dim="${esc(d)}"><option value="">Усі (${opts.length})</option><option value="__multi" hidden>Кілька значень</option>${opts.map(([v,c])=>`<option value="${esc(v)}">${esc(trunc(v,60))} · ${fmtN(c)}</option>`).join('')}</select></div>`;
   }).join('');
   $$('#dimFilters select').forEach(sel => sel.onchange = () => {
     const d = sel.dataset.dim;
     if(sel.value === '') delete state.filters.dims[d]; else if(sel.value !== '__multi') state.filters.dims[d] = new Set([sel.value]);
     renderChips(); applyFilters();
   });
-  const opt = (sel, def) => { const el = $(sel); const cur = el.value; el.innerHTML = dims.map(d=>`<option value="${esc(d)}">${esc(trunc(d,34))}</option>`).join(''); el.value = dims.includes(cur) ? cur : (def ?? dims[0] ?? ''); };
+  const opt = (sel, def) => { const el = $(sel); const cur = el.value; el.innerHTML = dims.map(d=>`<option value="${esc(d)}">${esc(trunc(fl(d),34))}</option>`).join(''); el.value = dims.includes(cur) ? cur : (def ?? dims[0] ?? ''); };
   opt('#barDim', dims[0]); opt('#pieDim', dims[1] ?? dims[0]); opt('#xtA', dims[0]); opt('#xtB', dims[1] ?? dims[0]);
   const noDims = !dims.length;
   ['#barDim','#pieDim'].forEach(s => $(s).closest('.card').classList.toggle('hidden', noDims));
@@ -793,7 +832,6 @@ function buildControls(){
   modes.push(['mon','Місяці']);
   $('#distMode').innerHTML = modes.map(([k,l])=>`<button data-d="${k}" class="${k===state.distMode?'on':''}">${l}</button>`).join('');
   $$('#distMode button').forEach(b => b.onclick = () => { state.distMode = b.dataset.d; $$('#distMode button').forEach(x=>x.classList.toggle('on', x===b)); renderDist(); });
-  if(state.hasDate){ $('#fFrom').min = $('#fTo').min = ymd(state.minDate); $('#fFrom').max = $('#fTo').max = ymd(state.maxDate); }
   syncFilterInputs();
 }
 
@@ -801,7 +839,8 @@ function renderMeta(){
   const m = state.meta || {};
   const lm = m.lastModified ? new Date(m.lastModified) : (m.last_modified ? new Date(/Z|[+-]\d\d:?\d\d$/.test(m.last_modified) ? m.last_modified : m.last_modified + 'Z') : null);
   const parts = [];
-  if(m.name) parts.push(`<span>Таблиця: <b>${esc(trunc(m.name,70))}</b></span>`);
+  const tname = !m.name || /^appeals(\.\w+)?$/i.test(m.name) ? 'Звернення на гарячі лінії' : m.name;
+  parts.push(`<span>Таблиця: <b>${esc(trunc(tname,70))}</b></span>`);
   if(m.updatedText) parts.push(`<span>Оновлено на порталі: <b>${esc(m.updatedText)}</b></span>`);
   else if(lm && !isNaN(lm)) parts.push(`<span>Оновлено на порталі: <b>${fmtDT(lm)}</b></span>`);
   if(m.fetchedAt){ const fa = new Date(m.fetchedAt); if(!isNaN(fa)) parts.push(`<span>Останні зміни отримано з порталу: <b>${fmtDT(fa)}</b></span>`); }
@@ -809,7 +848,7 @@ function renderMeta(){
   if(state.hasDate) parts.push(`<span>Охоплення: <b>${fmtD(state.minDate)} — ${fmtD(state.maxDate)}</b></span>`);
   parts.push(`<span>Джерело: <b>${esc(state.source)}</b>${state.via && state.via!=='—' ? ' · '+esc(state.via) : ''}</span>`);
   if(state.loadedAt) parts.push(`<span>Завантажено: <b>${fmtDT(state.loadedAt)}</b>${state.fromCache?' (копія)':''}</span>`);
-  if(state.schema && state.schema.weightCol) parts.push(`<span>Підрахунок за полем: <b>${esc(state.schema.weightCol)}</b></span>`);
+  if(state.schema && state.schema.weightCol) parts.push(`<span>Підрахунок за полем: <b>${esc(fl(state.schema.weightCol))}</b></span>`);
   $('#metaBar').innerHTML = parts.join('');
 }
 
@@ -842,7 +881,7 @@ function renderKPIs(){
   }
   if(dims[0]){
     const g = sortDesc(groupSum(rows, r => dimVal(r,dims[0])));
-    if(g.length) cards.push({ l:'Найчастіше · '+trunc(dims[0],22), v: esc(trunc(g[0][0],70)), small:true, n:`${fmtN(g[0][1])} звернень · ${pct(g[0][1],total)}% · всього значень: ${fmtN(g.length)}`, c:'#a78bfa' });
+    if(g.length) cards.push({ l:'Найчастіше · '+trunc(fl(dims[0]),26), v: esc(trunc(g[0][0],70)), small:true, n:`${fmtN(g[0][1])} ${zv(g[0][1])} · ${pct(g[0][1],total)}% · всього значень: ${fmtN(g.length)}`, c:'#a78bfa' });
   }
   $('#kpis').innerHTML = cards.map(c => `<div class="card kpi" style="--c:${c.c}"><div class="lbl" title="${esc(c.l)}">${esc(c.l)}</div><div class="val${c.small?' small':''}" title="${c.small?c.v:''}">${c.v}</div><div class="note">${c.n}</div></div>`).join('');
 }
@@ -852,11 +891,11 @@ function renderInsights(){
   if(!total){ $('#insights').innerHTML = '<li>Немає записів за обраними фільтрами.</li>'; return; }
   if(dims[0]){
     const g = sortDesc(groupSum(rows, r => dimVal(r,dims[0])));
-    if(g.length >= 3){ const s3 = g[0][1]+g[1][1]+g[2][1]; out.push(`Три найпоширеніші значення поля «${esc(dims[0])}» охоплюють <b>${pct(s3,total)}%</b> усіх звернень.`); }
+    if(g.length >= 3){ const s3 = g[0][1]+g[1][1]+g[2][1]; out.push(`Три найпоширеніші значення поля «${esc(fl(dims[0]))}» охоплюють <b>${pct(s3,total)}%</b> усіх звернень.`); }
   }
   if(dims[1]){
     const g = sortDesc(groupSum(rows, r => dimVal(r,dims[1])));
-    if(g.length) out.push(`За полем «${esc(dims[1])}» лідирує <b>${esc(trunc(g[0][0],60))}</b> — ${pct(g[0][1],total)}%.`);
+    if(g.length) out.push(`За полем «${esc(fl(dims[1]))}» лідирує <b>${esc(trunc(g[0][0],60))}</b> — ${pct(g[0][1],total)}%.`);
   }
   if(state.hasDate && state.dayLevel){
     const wd = groupSum(rows, r => r._d ? (r._d.getDay()+6)%7 : null); const s = sortDesc(wd);
@@ -876,7 +915,7 @@ function renderInsights(){
         if(r._d > a){ cur += r._w; if(k!=null) cd.set(k,(cd.get(k)||0)+r._w); }
         else if(r._d > b){ prev += r._w; if(k!=null) pd.set(k,(pd.get(k)||0)+r._w); } }
       if(prev){ const p = Math.round((cur-prev)/prev*1000)/10;
-        out.push(`За останні ${span} днів (до ${fmtD(max)}) — <b>${fmtN(cur)}</b> звернень: <span class="${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${Math.abs(p)}%</span> порівняно з попередніми ${span} днями.`);
+        out.push(`За останні ${span} днів (до ${fmtD(max)}) — <b>${fmtN(cur)}</b> ${zv(cur)}: <span class="${p>=0?'up':'down'}">${p>=0?'▲':'▼'} ${Math.abs(p)}%</span> порівняно з попередніми ${span} днями.`);
         if(dims[0]){
           const ch = []; for(const k of new Set([...cd.keys(),...pd.keys()])){ const c=cd.get(k)||0, pv=pd.get(k)||0; if(pv>=5 || c>=10) ch.push([k, c-pv, pv ? (c-pv)/pv*100 : 100]); }
           ch.sort((x,y)=>y[1]-x[1]);
@@ -1016,7 +1055,7 @@ function renderXT(){
   const sa = new Set(ta), sb = new Set(tb); const m = new Map(); const rt = new Map(); let max = 0;
   for(const r of rows){ const a = dimVal(r,A), b = dimVal(r,B); if(!sa.has(a)) continue; rt.set(a,(rt.get(a)||0)+r._w); if(!sb.has(b)) continue; const k = a+'\u0001'+b; const v = (m.get(k)||0)+r._w; m.set(k,v); if(v>max) max=v; }
   const accent = cssVar('--accent');
-  el.innerHTML = `<thead><tr><th>${esc(trunc(A,30))} \\ ${esc(trunc(B,30))}</th>${tb.map(b=>`<th title="${esc(b)}">${esc(trunc(b,22))}</th>`).join('')}<th>Разом</th></tr></thead><tbody>` +
+  el.innerHTML = `<thead><tr><th>${esc(trunc(fl(A),30))} \\ ${esc(trunc(fl(B),30))}</th>${tb.map(b=>`<th title="${esc(b)}">${esc(trunc(b,22))}</th>`).join('')}<th>Разом</th></tr></thead><tbody>` +
     ta.map(a => `<tr><td title="${esc(a)}">${esc(trunc(a,50))}</td>${tb.map(b=>{ const v = m.get(a+'\u0001'+b)||0; return `<td style="background:${v?hexA(accent,.08+.7*v/max):'transparent'}" title="${esc(a)} × ${esc(b)}: ${fmtN(v)}">${v?fmtN(v):'·'}</td>`; }).join('')}<td><b>${fmtN(rt.get(a)||0)}</b></td></tr>`).join('') + '</tbody>';
 }
 
@@ -1039,7 +1078,7 @@ function renderTable(){
   state.page = Math.min(Math.max(1,state.page), pages);
   const slice = rows.slice((state.page-1)*ps, state.page*ps); state.pageRows = slice;
   const f = state.fields, { col, dir } = state.sort;
-  $('#tbl thead').innerHTML = '<tr>' + f.map(c => `<th data-col="${esc(c)}" title="${esc(c)}">${esc(trunc(c,30))}${col===c ? (dir>0?' ▲':' ▼') : ''}</th>`).join('') + '</tr>';
+  $('#tbl thead').innerHTML = '<tr>' + f.map(c => `<th data-col="${esc(c)}" title="${esc(fl(c))}">${esc(trunc(fl(c),30))}${col===c ? (dir>0?' ▲':' ▼') : ''}</th>`).join('') + '</tr>';
   $('#tbl tbody').innerHTML = slice.length ? slice.map((r,i) => `<tr data-i="${i}">${f.map(c=>`<td title="${esc(trunc(r[c],300))}">${esc(trunc(r[c],80))}</td>`).join('')}</tr>`).join('')
     : `<tr><td colspan="${f.length||1}" class="empty">Нічого не знайдено</td></tr>`;
   $('#pgInfo').textContent = rows.length ? `${fmtN((state.page-1)*ps+1)}–${fmtN(Math.min(state.page*ps, rows.length))} з ${fmtN(rows.length)}` : '0 записів';
@@ -1047,17 +1086,17 @@ function renderTable(){
 }
 function showRow(r){
   const f = state.fields;
-  openModal(`<h2>Деталі звернення</h2><div class="kv">${f.map(c=>`<div>${esc(c)}</div><div>${esc(r[c]) || '<span class="sub">—</span>'}</div>`).join('')}</div>
+  openModal(`<h2>Деталі звернення</h2><div class="kv">${f.map(c=>`<div>${esc(fl(c))}</div><div>${esc(r[c]) || '<span class="sub">—</span>'}</div>`).join('')}</div>
     <div style="margin-top:14px;display:flex;justify-content:flex-end"><button class="btn" onclick="closeModal()">Закрити</button></div>`);
 }
 function exportData(kind){
-  const rows = sortedRows().map(r => { const o = {}; for(const c of state.fields) o[c] = r[c]; return o; });
+  const heads = state.fields.map(fl); const rows = sortedRows().map(r => { const o = {}; state.fields.forEach((c,i) => o[heads[i]] = r[c]); return o; });
   const name = `zvernennya-dnipro-${ymd(new Date())}`;
   if(kind === 'csv'){
-    const csv = '\uFEFF' + Papa.unparse(rows, { columns: state.fields, delimiter:';' });
+    const csv = '\uFEFF' + Papa.unparse(rows, { columns: heads, delimiter:';' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download = name + '.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
   }else{
-    const ws = XLSX.utils.json_to_sheet(rows, { header: state.fields }); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Звернення'); XLSX.writeFile(wb, name + '.xlsx');
+    const ws = XLSX.utils.json_to_sheet(rows, { header: heads }); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Звернення'); XLSX.writeFile(wb, name + '.xlsx');
   }
   toast(`Експортовано ${fmtN(rows.length)} записів`);
 }
@@ -1065,12 +1104,12 @@ function exportData(kind){
 /* =================== НАЛАШТУВАННЯ =================== */
 function openSettings(){
   const s = state.schema || { dims:[] }, f = state.fields;
-  const opt = (v, cur) => `<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(v || '— немає —')}</option>`;
+  const opt = (v, cur) => `<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(v ? fl(v) : '— немає —')}</option>`;
   openModal(`<h2>Налаштування</h2>
     ${f.length ? `<div class="form-row"><label>Колонка з датою / часом</label><select id="sDate">${['',...f].map(x=>opt(x,s.dateCol)).join('')}</select><span class="hint">Визначено ${s.auto?'автоматично':'вручну'}. Потрібна для графіків динаміки й теплової карти.</span></div>
     <div class="form-row"><label>Колонка з кількістю (якщо таблиця вже агрегована)</label><select id="sWeight">${['',...f].map(x=>opt(x,s.weightCol)).join('')}</select><span class="hint">Якщо один рядок = одне звернення — залиште «немає».</span></div>
-    <div class="form-row"><label>Категорії для аналізу (порядок = пріоритет)</label><div class="checks" id="sDims">${f.map(x=>`<label><input type="checkbox" value="${esc(x)}" ${s.dims.includes(x)?'checked':''}> ${esc(trunc(x,40))}</label>`).join('')}</div><span class="hint">Перші три з’являться у фільтрах, перша — у KPI та висновках.</span></div>` : ''}
-    <div class="form-row"><label>Власний CORS-проксі (необов’язково)</label><input type="text" id="sProxy" placeholder="https://your-proxy.example/?url=" value="${esc(LS.get('proxy',''))}"><span class="hint">Використовується, якщо портал не віддає дані напряму. Підтримується шаблон з {url}.</span></div>
+    <div class="form-row"><label>Категорії для аналізу (порядок = пріоритет)</label><div class="checks" id="sDims">${f.map(x=>`<label><input type="checkbox" value="${esc(x)}" ${s.dims.includes(x)?'checked':''}> ${esc(trunc(fl(x),40))}</label>`).join('')}</div><span class="hint">Перші три з’являться у фільтрах, перша — у KPI та висновках.</span></div>` : ''}
+    <div class="form-row"><label>Власний проксі-сервер (необов’язково)</label><input type="text" id="sProxy" placeholder="https://адреса-проксі/?url=" value="${esc(LS.get('proxy',''))}"><span class="hint">Використовується лише тоді, коли портал не віддає дані напряму.</span></div>
     <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;margin-top:6px">
       <button class="btn" id="sAuto">↺ Автовизначення</button>
       <div style="display:flex;gap:8px"><button class="btn" onclick="closeModal()">Скасувати</button><button class="btn primary" id="sSave">Зберегти</button></div>
@@ -1101,10 +1140,6 @@ let toastT; function toast(html){ const t = $('#toast'); t.innerHTML = html; t.c
 function openModal(html){ $('#modalBox').innerHTML = html; $('#modal').classList.add('open'); }
 function closeModal(){ $('#modal').classList.remove('open'); }
 function applyTheme(t){ document.documentElement.dataset.theme = t; LS.set('theme', t); if(state.raw.length) renderAll(); }
-function setAutoRefresh(min){
-  clearInterval(state.timer); state.timer = null; LS.set('auto', min);
-  if(+min > 0) state.timer = setInterval(() => load(true), +min*60000);
-}
 
 /* =================== ПОДІЇ =================== */
 function wire(){
@@ -1115,12 +1150,22 @@ function wire(){
   $('#errRetry').onclick = () => { state.proxyIdx = null; load(false); };
   $('#errLink').href = RES_PAGE; $('#srcLink').href = RES_PAGE;
   $('#btnTheme').onclick = () => applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
-  $('#autoRefresh').onchange = e => setAutoRefresh(e.target.value);
   $('#modal').onclick = e => { if(e.target.id === 'modal') closeModal(); };
   document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
 
-  $('#fFrom').onchange = e => { state.filters.from = e.target.value ? new Date(e.target.value+'T00:00:00') : null; $$('#quick button').forEach(b=>b.classList.remove('on')); renderChips(); applyFilters(); };
-  $('#fTo').onchange = e => { state.filters.to = e.target.value ? new Date(e.target.value+'T23:59:59.999') : null; $$('#quick button').forEach(b=>b.classList.remove('on')); renderChips(); applyFilters(); };
+  const dateInput = (el, key, end) => {
+    el.oninput = () => { let v = el.value.replace(/[^\d]/g,'').slice(0,8);
+      if(v.length > 4) v = v.slice(0,2)+'.'+v.slice(2,4)+'.'+v.slice(4); else if(v.length > 2) v = v.slice(0,2)+'.'+v.slice(2);
+      el.value = v; el.classList.remove('bad'); };
+    el.onchange = () => {
+      const v = el.value.trim(); let d = null;
+      if(v){ const m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); d = m ? mk(m[3], m[2], m[1]) : null;
+        if(!d){ el.classList.add('bad'); toast('Невірна дата — потрібен формат дд.мм.рррр'); return; } }
+      if(d && end) d.setHours(23,59,59,999);
+      state.filters[key] = d; $$('#quick button').forEach(b=>b.classList.remove('on')); syncFilterInputs(); applyFilters();
+    };
+  };
+  dateInput($('#fFrom'), 'from', false); dateInput($('#fTo'), 'to', true);
   $$('#quick button').forEach(b => b.onclick = () => setRange(b.dataset.q));
   let qt; $('#fSearch').oninput = e => { clearTimeout(qt); qt = setTimeout(()=>{ state.filters.q = e.target.value; applyFilters(); }, 250); };
   $('#fReset').onclick = () => { state.filters = { from:null, to:null, dims:{}, q:'' }; $('#fSearch').value = ''; $$('#quick button').forEach(b=>b.classList.toggle('on', b.dataset.q==='all')); syncFilterInputs(); applyFilters(); };
@@ -1150,7 +1195,6 @@ function wire(){
   window.addEventListener('dragleave', e => { dc--; if(dc<=0){ dc=0; $('#drop').classList.remove('show'); } });
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => { e.preventDefault(); dc = 0; $('#drop').classList.remove('show'); const f = e.dataTransfer.files[0]; if(f) loadLocalFile(f); });
-  document.addEventListener('visibilitychange', () => { if(!document.hidden && +LS.get('auto',0) > 0 && state.loadedAt && Date.now() - state.loadedAt > LS.get('auto',0)*60000) load(true); });
 }
 
 /* =================== СТАРТ =================== */
@@ -1159,9 +1203,8 @@ function wire(){
   document.documentElement.dataset.theme = t;
   if(window.Chart){ Chart.defaults.font.family = 'Manrope, system-ui, sans-serif'; Chart.defaults.font.size = 12; }
   wire();
-  const auto = LS.get('auto', 15); $('#autoRefresh').value = String(auto); setAutoRefresh(auto);
   if(!window.Chart || !window.Papa || !window.XLSX){ showError('Не завантажились бібліотеки графіків (потрібен інтернет).'); }
-  const cache = LS.get('cache', null);
+  const cache = LS.get('cache2', null);
   if(cache && cache.rows && cache.rows.length){
     // миттєвий показ останніх даних, а свіжі підтягуються у фоні
     state.meta = cache.meta; state.source = cache.source; state.loadedAt = new Date(cache.at); state.fromCache = true;
