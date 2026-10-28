@@ -330,17 +330,10 @@ const CONFIG = {
   portal: 'https://data.dniprorada.gov.ua',
   datasetId: '567222ec-4317-42d0-8cba-66d0a0c722ce',
   resourceId: '0cdd12db-695d-4395-a6fd-50a3ad98cfb3',
-  // Якщо портал не віддає дані браузеру напряму (CORS), пробуємо через публічні проксі.
-  // Свій проксі можна вказати в налаштуваннях (⚙). Формат: https://my-proxy/?url=  або  https://my-proxy/{url}
-  proxies: [
-    'https://corsproxy.io/?url=',
-    'https://api.allorigins.win/raw?url=',
-    'https://api.codetabs.com/v1/proxy/?quest='
-  ],
-  // Прямий лінк на файл таблиці (кнопка «Завантажити» на сторінці ресурсу).
-  // Якщо залишити порожнім — дашборд знайде його сам на сторінці ресурсу.
-  fileUrl: '',
-  fileNames: ['appeals.csv', 'appeals.xlsx', 'appeals.json']
+  // Пряме посилання на файл таблиці — запасний шлях через проксі
+  fileUrl: 'https://data.dniprorada.gov.ua/dataset/567222ec-4317-42d0-8cba-66d0a0c722ce/resource/0cdd12db-695d-4395-a6fd-50a3ad98cfb3/download/appeals.csv',
+  pageSize: 32000,     // скільки рядків брати за один запит
+  timeoutMs: 15000
 };
 const RES_PAGE = `${CONFIG.portal}/dataset/${CONFIG.datasetId}/resource/${CONFIG.resourceId}`;
 
@@ -407,31 +400,88 @@ const state = {
 };
 
 /* =================== ЗАВАНТАЖЕННЯ =================== */
-function proxyList(){ const custom = LS.get('proxy',''); return ['', ...(custom ? [custom] : []), ...CONFIG.proxies]; }
-function wrap(proxy, url){ if(!proxy) return url; return proxy.includes('{url}') ? proxy.replace('{url}', encodeURIComponent(url)) : proxy + encodeURIComponent(url); }
 const errLog = [];
 
-/* Завантаження байтів за адресою: напряму, а якщо браузер не пускає (CORS) — через проксі */
-async function fetchVia(url){
-  const list = proxyList();
-  let order = list.map((_,i)=>i);
-  if(state.proxyIdx != null && state.proxyIdx < list.length) order = [state.proxyIdx, ...order.filter(i=>i!==state.proxyIdx)];
-  let lastErr;
-  for(const i of order){
-    const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 30000);
-    try{
-      const res = await fetch(wrap(list[i], url), { signal: ctrl.signal, cache: 'no-store' });
-      if(!res.ok) throw new Error('HTTP '+res.status);
-      const buf = await res.arrayBuffer();
-      state.proxyIdx = i;
-      state.via = list[i] ? (()=>{ try{ return new URL(list[i].replace('{url}','x')).host; }catch(e){ return 'проксі'; } })() : 'напряму';
-      return { buf, lastModified: res.headers.get('last-modified') };
-    }catch(e){
-      lastErr = e;
-      errLog.push(`${list[i] ? '[проксі '+trunc(list[i],40)+']' : '[напряму]'} ${trunc(url,90)} → ${e.name==='AbortError' ? 'таймаут' : e.message}`);
-    }finally{ clearTimeout(t); }
+/* JSONP: портал віддає таблицю як скрипт, тож CORS не заважає */
+function jsonp(url, timeout){
+  return new Promise((resolve, reject) => {
+    const cb = '__dn' + Date.now().toString(36) + Math.floor(Math.random()*1e6);
+    const sc = document.createElement('script');
+    const done = () => { clearTimeout(t); window[cb] = () => {}; sc.remove(); };
+    const t = setTimeout(() => { done(); reject(new Error('таймаут')); }, timeout || CONFIG.timeoutMs);
+    window[cb] = data => { done(); resolve(data); };
+    sc.onerror = () => { done(); reject(new Error('портал не віддав дані')); };
+    sc.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb;
+    document.head.appendChild(sc);
+  });
+}
+const ckan = (action, params) => `${CONFIG.portal}/api/3/action/${action}?${new URLSearchParams(params)}`;
+
+async function loadViaJsonp(){
+  const page = (offset, limit) => jsonp(ckan('datastore_search', { resource_id: CONFIG.resourceId, limit, offset, records_format: 'lists' }))
+    .then(j => { if(!j || !j.success) throw new Error((j && j.error && j.error.message) || 'помилка порталу'); return j.result; });
+  const metaP = jsonp(ckan('resource_show', { id: CONFIG.resourceId }), 8000).then(j => j && j.success ? j.result : null).catch(() => null);
+  setLoader('Отримую таблицю з порталу…', 25);
+  const first = await page(0, CONFIG.pageSize);
+  const fields = (first.fields || []).map(f => f.id).filter(f => f !== '_id' && f !== '_full_text');
+  const allIds = (first.fields || []).map(f => f.id);
+  const total = first.total ?? first.records.length;
+  const step = Math.max(1, first.records.length);
+  const pages = [first.records];
+  if(total > step){
+    const offsets = []; for(let o = step; o < total; o += step) offsets.push(o);
+    let got = step;
+    for(let i = 0; i < offsets.length; i += 4){       // по 4 запити паралельно
+      const res = await Promise.all(offsets.slice(i, i+4).map(o => page(o, step)));
+      res.forEach(r => { pages.push(r.records); got += r.records.length; });
+      setLoader(`Отримано ${fmtN(Math.min(got,total))} з ${fmtN(total)} записів…`, 25 + 60*Math.min(1, got/total));
+    }
   }
-  throw lastErr || new Error('Не вдалося завантажити');
+  const rows = [];
+  for(const recs of pages) for(const r of recs){
+    if(Array.isArray(r)){ const o = {}; allIds.forEach((k,i) => o[k] = r[i]); rows.push(o); } else rows.push(r);
+  }
+  const m = await metaP;
+  return { data: { rows, fields }, meta: { name: (m && m.name) || 'appeals', last_modified: m && (m.last_modified || m.metadata_modified), url: CONFIG.fileUrl } };
+}
+
+/* Запасний шлях: файл через проксі (свій із налаштувань або публічні), усі паралельно — перемагає найшвидший */
+const PUBLIC_PROXIES = [
+  { url: u => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, json: 'contents' },
+  { url: u => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(u)}` }
+];
+async function loadViaProxies(){
+  const custom = LS.get('proxy','');
+  const list = [...(custom ? [{ url: u => custom.includes('{url}') ? custom.replace('{url}', encodeURIComponent(u)) : custom + encodeURIComponent(u), mine:true }] : []), ...PUBLIC_PROXIES];
+  const ctrls = [];
+  const attempt = async px => {
+    const ctrl = new AbortController(); ctrls.push(ctrl); const t = setTimeout(() => ctrl.abort(), CONFIG.timeoutMs);
+    try{
+      const res = await fetch(px.url(CONFIG.fileUrl), { signal: ctrl.signal, cache: 'no-store' });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      let buf;
+      if(px.json){ const j = await res.json(); buf = new TextEncoder().encode(j[px.json] || '').buffer; } else buf = await res.arrayBuffer();
+      const d = parseBuffer(buf, CONFIG.fileUrl);
+      if(!d.rows.length) throw new Error('порожня таблиця');
+      return { d, host: px.mine ? 'ваш проксі' : new URL(px.url('x')).host };
+    }catch(e){ errLog.push(`[проксі] → ${e.name==='AbortError' ? 'таймаут' : e.message}`); throw e; }
+    finally{ clearTimeout(t); }
+  };
+  setLoader('Пробую запасний шлях…', 50);
+  const win = await Promise.any(list.map(attempt));
+  ctrls.forEach(c => c.abort());
+  state.via = win.host;
+  return { data: win.d, meta: { name: 'appeals', url: CONFIG.fileUrl } };
+}
+
+async function loadFromSite(){
+  try{
+    const r = await loadViaJsonp();
+    state.via = 'напряму з порталу';
+    return r;
+  }catch(e){ errLog.push('[портал] ' + e.message); }
+  try{ return await loadViaProxies(); }
+  catch(e){ throw new Error('усі способи завантаження не спрацювали'); }
 }
 
 function decodeText(buf){
@@ -460,52 +510,6 @@ function parseBuffer(buf, hint){
   if(/^\s*<(!doctype|html|head|body)/i.test(ts)) throw new Error('замість таблиці отримано вебсторінку');
   const p = Papa.parse(text, { header:true, skipEmptyLines:'greedy', transformHeader: x => x.trim() });
   return { rows: p.data, fields: (p.meta.fields||[]).filter(Boolean) };
-}
-
-/* Сторінка ресурсу: шукаємо пряме посилання на файл таблиці та дату оновлення */
-function scanResourcePage(html){
-  const out = { links: [], updated: null, name: null };
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const abs = href => { try{ return new URL(href, RES_PAGE + '/').href; }catch(e){ return null; } };
-  const sel = 'a.resource-url-analytics, a[href*="/download/"], a[href*="' + CONFIG.resourceId + '/download"]';
-  doc.querySelectorAll(sel).forEach(a => { const u = abs(a.getAttribute('href')); if(u && !out.links.includes(u)) out.links.push(u); });
-  const h1 = doc.querySelector('h1'); if(h1) out.name = h1.textContent.trim();
-  doc.querySelectorAll('tr').forEach(tr => {
-    const th = tr.querySelector('th,td'); const td = tr.querySelectorAll('td'); if(!th || !td.length) return;
-    if(/оновлено|last updated|востаннє/i.test(th.textContent) && !out.updated) out.updated = td[td.length-1].textContent.trim();
-  });
-  return out;
-}
-
-async function loadFromSite(){
-  const tried = new Set(), meta = { name: LS.get('pageName', null), updatedText: null, lastModified: null, url: null };
-  const tryUrl = async url => {
-    if(!url || tried.has(url)) return null; tried.add(url);
-    setLoader('Завантажую таблицю з сайту…', 35);
-    try{
-      const r = await fetchVia(url);
-      setLoader('Розбираю таблицю…', 80);
-      const d = parseBuffer(r.buf, url);
-      if(!d.rows.length || !d.fields.length) throw new Error('порожня таблиця');
-      meta.url = url; meta.lastModified = r.lastModified;
-      LS.set('fileUrl', url);
-      return d;
-    }catch(e){ errLog.push(`${trunc(url,90)} → ${e.message}`); return null; }
-  };
-  // 1) відомий лінк на файл (вказаний у CONFIG або знайдений минулого разу) — найшвидший шлях
-  for(const u of [CONFIG.fileUrl, LS.get('fileUrl','')]){ const d = await tryUrl(u); if(d) return { data:d, meta }; }
-  // 2) сторінка ресурсу → посилання «Завантажити»
-  setLoader('Відкриваю сторінку таблиці на порталі…', 15);
-  try{
-    const page = await fetchVia(RES_PAGE);
-    const info = scanResourcePage(decodeText(page.buf));
-    meta.name = info.name || meta.name; meta.updatedText = info.updated; if(info.name) LS.set('pageName', info.name);
-    for(const u of info.links){ const d = await tryUrl(u); if(d) return { data:d, meta }; }
-  }catch(e){}
-  // 3) типові адреси файлу ресурсу
-  for(const f of CONFIG.fileNames){ const d = await tryUrl(`${RES_PAGE}/download/${f}`); if(d) return { data:d, meta }; }
-  const d = await tryUrl(`${RES_PAGE}/download`); if(d) return { data:d, meta };
-  throw new Error('файл таблиці не знайдено');
 }
 
 function normalize(rows, fields){
@@ -539,8 +543,7 @@ async function load(silent){
   try{
     const r = await loadFromSite();
     data = r.data; meta = r.meta;
-    const ext = (meta.url.match(/\.(csv|xlsx?|json)(?:$|\?)/i) || [,'таблиця'])[1];
-    source = 'таблиця з сайту (' + ext.toUpperCase() + ')';
+    source = 'таблиця «appeals» з порталу';
     if(!data || !data.rows.length) throw new Error('Таблиця порожня або не розпізнана');
     const n = normalize(data.rows, data.fields);
     state.meta = meta; state.source = source; state.fromCache = false; state.loadedAt = new Date();
@@ -564,7 +567,7 @@ async function load(silent){
     }else if(state.raw.length){
       setStatus('err', 'Помилка оновлення'); toast('Не вдалося оновити дані — показано попередню версію');
     }else{
-      showError('Браузер не зміг отримати таблицю з порталу (можливо, портал не дозволяє міжсайтові запити або тимчасово недоступний). Спробуйте ще раз, вкажіть свій проксі або завантажте файл вручну — його можна скачати на сторінці ресурсу.');
+      showError('Не вдалося отримати таблицю з порталу: він зараз недоступний або не відповідає. Натисніть «Спробувати ще раз», або завантажте файл таблиці вручну (кнопка ⤒).');
       setStatus('err', 'Немає даних');
     }
   }finally{
@@ -796,11 +799,12 @@ function buildControls(){
 
 function renderMeta(){
   const m = state.meta || {};
-  const lm = m.lastModified ? new Date(m.lastModified) : (m.last_modified ? new Date(m.last_modified) : null);
+  const lm = m.lastModified ? new Date(m.lastModified) : (m.last_modified ? new Date(/Z|[+-]\d\d:?\d\d$/.test(m.last_modified) ? m.last_modified : m.last_modified + 'Z') : null);
   const parts = [];
   if(m.name) parts.push(`<span>Таблиця: <b>${esc(trunc(m.name,70))}</b></span>`);
   if(m.updatedText) parts.push(`<span>Оновлено на порталі: <b>${esc(m.updatedText)}</b></span>`);
-  else if(lm && !isNaN(lm)) parts.push(`<span>Файл оновлено: <b>${fmtDT(lm)}</b></span>`);
+  else if(lm && !isNaN(lm)) parts.push(`<span>Оновлено на порталі: <b>${fmtDT(lm)}</b></span>`);
+  if(m.fetchedAt){ const fa = new Date(m.fetchedAt); if(!isNaN(fa)) parts.push(`<span>Останні зміни отримано з порталу: <b>${fmtDT(fa)}</b></span>`); }
   parts.push(`<span>Записів у таблиці: <b>${fmtN(state.raw.length)}</b></span>`);
   if(state.hasDate) parts.push(`<span>Охоплення: <b>${fmtD(state.minDate)} — ${fmtD(state.maxDate)}</b></span>`);
   parts.push(`<span>Джерело: <b>${esc(state.source)}</b>${state.via && state.via!=='—' ? ' · '+esc(state.via) : ''}</span>`);
@@ -1157,7 +1161,13 @@ function wire(){
   wire();
   const auto = LS.get('auto', 15); $('#autoRefresh').value = String(auto); setAutoRefresh(auto);
   if(!window.Chart || !window.Papa || !window.XLSX){ showError('Не завантажились бібліотеки графіків (потрібен інтернет).'); }
-  load(false);
+  const cache = LS.get('cache', null);
+  if(cache && cache.rows && cache.rows.length){
+    // миттєвий показ останніх даних, а свіжі підтягуються у фоні
+    state.meta = cache.meta; state.source = cache.source; state.loadedAt = new Date(cache.at); state.fromCache = true;
+    try{ setData(cache.rows, cache.fields); }catch(e){}
+    state.raw.length ? load(true) : load(false);
+  }else load(false);
 })();
 </script>
 </body>
